@@ -44,6 +44,7 @@ func (p *Packager) FindImages() (imgMap map[string][]string, err error) {
 	erroredCharts := []string{}
 	erroredCosignLookups := []string{}
 	whyResources := []string{}
+	erroredShaLookups := []string{}
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -232,7 +233,14 @@ func (p *Packager) FindImages() (imgMap map[string][]string, err error) {
 			for _, image := range sortedImages {
 				// Use print because we want this dumped to stdout
 				imagesMap[component.Name] = append(imagesMap[component.Name], image)
-				componentDefinition += fmt.Sprintf("      - %s\n", image)
+				imageWithSha, err := utils.GetImageWithSha(image)
+				if err != nil {
+					message.WarnErrf(err, "Problem getting image with sha for %s: %s", image, err.Error())
+					erroredShaLookups = append(erroredShaLookups, image)
+					continue
+				}
+				message.Debugf("Image with sha: %s", imageWithSha)
+				componentDefinition += fmt.Sprintf("      - %s\n", imageWithSha)
 			}
 		}
 
@@ -303,7 +311,7 @@ func (p *Packager) FindImages() (imgMap map[string][]string, err error) {
 		return nil, err
 	}
 
-	if len(erroredCharts) > 0 || len(erroredCosignLookups) > 0 {
+	if len(erroredCharts) > 0 || len(erroredCosignLookups) > 0 || len(erroredShaLookups) > 0 {
 		errMsg := ""
 		if len(erroredCharts) > 0 {
 			errMsg = fmt.Sprintf("the following charts had errors: %s", erroredCharts)
@@ -313,6 +321,12 @@ func (p *Packager) FindImages() (imgMap map[string][]string, err error) {
 				errMsg += "\n"
 			}
 			errMsg += fmt.Sprintf("the following images errored on cosign lookups: %s", erroredCosignLookups)
+		}
+		if len(erroredShaLookups) > 0 {
+			if errMsg != "" {
+				errMsg += "\n"
+			}
+			errMsg += fmt.Sprintf("the following images errored on sha lookups: %s", erroredShaLookups)
 		}
 		return imagesMap, fmt.Errorf(errMsg)
 	}

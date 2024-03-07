@@ -7,8 +7,10 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/google/go-containerregistry/pkg/crane"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/defenseunicorns/zarf/src/pkg/transform"
 	"github.com/defenseunicorns/zarf/src/pkg/utils/helpers"
@@ -16,6 +18,21 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+// GetImageWithSha returns the image reference and the sha256 digest of the image.
+func GetImageWithSha(imgSrc string) (string, error) {
+	regex := regexp.MustCompile(`^.*@sha256:[a-f0-9]{64}$`)
+	if regex.MatchString(imgSrc) {
+		return imgSrc, nil
+	}
+
+	imgDescriptor, err := crane.Head(imgSrc)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s@%s", imgSrc, imgDescriptor.Digest), nil
+}
 
 // LoadOCIImage returns a v1.Image with the image ref specified from a location provided, or an error if the image cannot be found.
 func LoadOCIImage(imgPath string, refInfo transform.Image) (v1.Image, error) {
