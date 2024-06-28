@@ -9,14 +9,19 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
 
 	"github.com/defenseunicorns/pkg/helpers/v2"
 	"github.com/defenseunicorns/zarf/src/config"
+	"github.com/defenseunicorns/zarf/src/internal/packager/images"
+	"github.com/defenseunicorns/zarf/src/pkg/cluster"
 	"github.com/defenseunicorns/zarf/src/pkg/layout"
 	"github.com/defenseunicorns/zarf/src/pkg/message"
 	"github.com/defenseunicorns/zarf/src/pkg/packager/creator"
 	"github.com/defenseunicorns/zarf/src/pkg/packager/filters"
+	"github.com/defenseunicorns/zarf/src/pkg/transform"
 	"github.com/defenseunicorns/zarf/src/types"
+	"github.com/google/go-containerregistry/pkg/crane"
 )
 
 // DevDeploy creates + deploys a package in one shot
@@ -66,6 +71,41 @@ func (p *Packager) DevDeploy(ctx context.Context) error {
 		for idx := range p.cfg.Pkg.Components {
 			p.cfg.Pkg.Components[idx].Images = []string{}
 			p.cfg.Pkg.Components[idx].Repos = []string{}
+		}
+	} else {
+		diff := func(a, b []string, normalizer func(string) string) []string {
+			var diff []string
+
+			for _, ele := range b {
+				if !slices.ContainsFunc(a, func(s string) bool {
+					return normalizer(s) == normalizer(ele)
+				}) {
+					diff = append(diff, ele)
+				}
+			}
+
+			return diff
+		}
+
+		normalizeImageName := func(s string) string {
+			imgInfo, _ := transform.ParseImageRef(s)
+			return imgInfo.Path
+		}
+
+		if c, err := cluster.NewCluster(); err == nil { // if NO error
+			if zarfState, err := c.LoadZarfState(ctx); err == nil { // if NO error
+				authOption := images.WithPullAuth(zarfState.RegistryInfo)
+
+				if registryEndpoint, tunnel, err := c.ConnectToZarfRegistryEndpoint(ctx, zarfState.RegistryInfo); err == nil { // if NO error
+					defer tunnel.Close()
+
+					if names, err := crane.Catalog(registryEndpoint, authOption); err == nil { // if NO error
+						for idx, pending := range p.cfg.Pkg.Components {
+							p.cfg.Pkg.Components[idx].Images = diff(names, pending.Images, normalizeImageName)
+						}
+					}
+				}
+			}
 		}
 	}
 
