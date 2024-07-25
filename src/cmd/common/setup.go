@@ -22,6 +22,8 @@ func SetupCLI(logLevel string, skipLogFile, noColor bool) error {
 		message.DisableColor()
 	}
 
+	SetViperConfigFilePath(config.CommonOptions.ConfigPath)
+
 	printViperConfigUsed()
 
 	if logLevel != "" {
