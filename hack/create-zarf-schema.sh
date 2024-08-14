@@ -2,20 +2,26 @@
 
 set -euo pipefail
 
-# Create the json schema for the zarf.yaml
-go run main.go internal gen-config-schema > zarf.schema.json
+add_yaml_extensions() {
+  local input_file=$1
+  local dst_folder="schema"
 
-# Adds pattern properties to all definitions to allow for yaml extensions
-jq '
-  def addPatternProperties:
-    . +
-    if has("properties") then
-      {"patternProperties": {"^x-": {}}}
-    else
-      {}
-    end;
+  jq '
+    def addPatternProperties:
+      . +
+      if has("properties") then
+        {"patternProperties": {"^x-": {}}}
+      else
+        {}
+      end;
 
-  walk(if type == "object" then addPatternProperties else . end)
-' zarf.schema.json > temp_zarf.schema.json
+    walk(if type == "object" then addPatternProperties else . end)
+  ' "$input_file" > "$dst_folder/$input_file"
+  rm "$input_file"
+}
 
-mv temp_zarf.schema.json zarf.schema.json
+go run schema/src/main.go v1alpha1 > "zarf_package_v1alpha1.schema.json"
+go run schema/src/main.go v1beta1 > "zarf_package_v1beta1.schema.json"
+
+add_yaml_extensions "zarf_package_v1alpha1.schema.json"
+add_yaml_extensions "zarf_package_v1beta1.schema.json"

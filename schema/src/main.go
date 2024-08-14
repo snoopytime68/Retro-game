@@ -13,21 +13,6 @@ import (
 	"github.com/zarf-dev/zarf/src/api/v1beta1"
 )
 
-func addGoComments(reflector *jsonschema.Reflector, apiVersion string) error {
-	// Get the file path of the currently executing file
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		return errors.New("error getting file path")
-	}
-
-	typePackagePath := filepath.Join(filename, "..", "..", "..", "src", "api", apiVersion)
-	if err := reflector.AddGoComments("github.com/zarf-dev/zarf", typePackagePath); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 var apiVersionToObject = map[string]interface{}{
 	"v1alpha1": &v1alpha1.ZarfPackage{},
 	"v1beta1":  &v1beta1.ZarfPackage{},
@@ -35,7 +20,21 @@ var apiVersionToObject = map[string]interface{}{
 
 func genSchema(apiVersion string) (string, error) {
 	reflector := jsonschema.Reflector(jsonschema.Reflector{ExpandedStruct: true})
-	if err := addGoComments(&reflector, apiVersion); err != nil {
+
+	// AddGoComments breaks if called with a absolute path, so we move to the directory of the go executable
+	// then use a relative path to the package
+	_, filename, _, ok := runtime.Caller(1)
+	if !ok {
+		return "", errors.New("unable to get the current filename")
+	}
+	goExecDir := filepath.Dir(filename)
+	if err := os.Chdir(goExecDir); err != nil {
+		return "", err
+	}
+
+	typePackagePath := filepath.Join("..", "..", "src", "api", apiVersion)
+
+	if err := reflector.AddGoComments("github.com/zarf-dev/zarf/schema/src", typePackagePath); err != nil {
 		return "", err
 	}
 
