@@ -1,6 +1,6 @@
 # schema generation
 
-This go project is designed to generate the JSON schema for the given API version of zarf.yaml files.
+This go project generates the JSON schema for zarf.yaml files with the given API version.
 
 ## Usage
 Run the program with the desired API version as an argument:
