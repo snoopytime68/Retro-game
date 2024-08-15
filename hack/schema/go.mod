@@ -1,4 +1,4 @@
-module github.com/zarf-dev/zarf/tools/schema
+module github.com/zarf-dev/zarf/hack/schema
 
 go 1.22.4
 

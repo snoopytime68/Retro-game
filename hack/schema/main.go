@@ -34,7 +34,7 @@ func genSchema(apiVersion string) (string, error) {
 
 	typePackagePath := filepath.Join("..", "..", "src", "api", apiVersion)
 
-	if err := reflector.AddGoComments("github.com/zarf-dev/zarf/tools/schema", typePackagePath); err != nil {
+	if err := reflector.AddGoComments("github.com/zarf-dev/zarf/hack/schema", typePackagePath); err != nil {
 		return "", err
 	}
 
