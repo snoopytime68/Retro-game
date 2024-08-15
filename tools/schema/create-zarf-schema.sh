@@ -22,9 +22,9 @@ add_yaml_extensions() {
 go run schema/src/main.go v1alpha1 > "zarf_package_v1alpha1.schema.json"
 go run schema/src/main.go v1beta1 > "zarf_package_v1beta1.schema.json"
 
-add_yaml_extensions "zarf_package_v1alpha1.schema.json" "zarf.schema.json"
-add_yaml_extensions "zarf_package_v1alpha1.schema.json" "schema/zarf_package_v1alpha1.schema.json"
-add_yaml_extensions "zarf_package_v1beta1.schema.json" "schema/zarf_package_v1beta1.schema.json"
+add_yaml_extensions "zarf_package_v1alpha1.schema.json" "../../zarf.schema.json"
+add_yaml_extensions "zarf_package_v1alpha1.schema.json" "../../schema/zarf_package_v1alpha1.schema.json"
+add_yaml_extensions "zarf_package_v1beta1.schema.json" "../../schema/zarf_package_v1beta1.schema.json"
 
 rm zarf_package_v1alpha1.schema.json
 rm zarf_package_v1beta1.schema.json
