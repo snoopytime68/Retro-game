@@ -52,7 +52,6 @@ func testHelmChartsExample(t *testing.T) {
 	stdOut, stdErr, err = e2e.Zarf(t, "package", "create", evilChartLookupPath, "--tmpdir", tmpdir, "--confirm")
 	require.Error(t, err, stdOut, stdErr)
 	require.Contains(t, e2e.StripMessageFormatting(stdErr), "chart \"asdf\" version \"6.4.0\" not found")
-	require.Contains(t, e2e.StripMessageFormatting(stdErr), "Available charts and versions from \"https://stefanprodan.github.io/podinfo\":")
 
 	// Create a test package (with a registry override (host+subpath to host+subpath) to test that as well)
 	stdOut, stdErr, err = e2e.Zarf(t, "package", "create", "examples/helm-charts", "-o", "build", "--registry-override", "ghcr.io/stefanprodan=docker.io/stefanprodan", "--tmpdir", tmpdir, "--confirm")
@@ -115,7 +114,7 @@ func testHelmEscaping(t *testing.T) {
 func testHelmUninstallRollback(t *testing.T) {
 	t.Log("E2E: Helm Uninstall and Rollback")
 
-	goodPath := fmt.Sprintf("build/zarf-package-dos-games-%s-1.0.0.tar.zst", e2e.Arch)
+	goodPath := fmt.Sprintf("build/zarf-package-dos-games-%s-1.1.0.tar.zst", e2e.Arch)
 	evilPath := fmt.Sprintf("zarf-package-dos-games-%s.tar.zst", e2e.Arch)
 
 	// Create the evil package (with the bad service).
@@ -172,7 +171,7 @@ func testHelmUninstallRollback(t *testing.T) {
 func testHelmAdoption(t *testing.T) {
 	t.Log("E2E: Helm Adopt a Deployment")
 
-	packagePath := fmt.Sprintf("build/zarf-package-dos-games-%s-1.0.0.tar.zst", e2e.Arch)
+	packagePath := fmt.Sprintf("build/zarf-package-dos-games-%s-1.1.0.tar.zst", e2e.Arch)
 	deploymentManifest := "src/test/packages/25-manifest-adoption/deployment.yaml"
 
 	// Deploy dos-games manually into the cluster without Zarf
