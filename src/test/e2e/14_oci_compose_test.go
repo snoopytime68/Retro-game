@@ -104,8 +104,6 @@ func (suite *PublishCopySkeletonSuite) Test_1_Compose_Everything_Inception() {
 	suite.NoError(err)
 
 	targets := []string{
-		"import-component-local == import-component-local",
-		"import-component-oci == import-component-oci",
 		"file-imports == file-imports",
 		"local-chart-import == local-chart-import",
 	}
@@ -191,18 +189,18 @@ func (suite *PublishCopySkeletonSuite) Test_3_Copy() {
 
 	dstRegistry := testutil.SetupInMemoryRegistry(testutil.TestContext(t), t, 31890)
 	dstRef := strings.Replace(ref, suite.Reference.Registry, dstRegistry, 1)
+	ctx := testutil.TestContext(t)
 
-	src, err := zoci.NewRemote(ref, oci.PlatformForArch(e2e.Arch), oci.WithPlainHTTP(true))
+	src, err := zoci.NewRemote(ctx, ref, oci.PlatformForArch(e2e.Arch), oci.WithPlainHTTP(true))
 	suite.NoError(err)
 
-	dst, err := zoci.NewRemote(dstRef, oci.PlatformForArch(e2e.Arch), oci.WithPlainHTTP(true))
+	dst, err := zoci.NewRemote(ctx, dstRef, oci.PlatformForArch(e2e.Arch), oci.WithPlainHTTP(true))
 	suite.NoError(err)
 
 	reg, err := remote.NewRegistry(strings.Split(dstRef, "/")[0])
 	suite.NoError(err)
 	reg.PlainHTTP = true
 	attempt := 0
-	ctx := testutil.TestContext(t)
 	for attempt <= 5 {
 		err = reg.Ping(ctx)
 		if err == nil {

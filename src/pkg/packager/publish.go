@@ -13,6 +13,7 @@ import (
 	"github.com/defenseunicorns/pkg/helpers/v2"
 	"github.com/defenseunicorns/pkg/oci"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+
 	"github.com/zarf-dev/zarf/src/api/v1alpha1"
 	"github.com/zarf-dev/zarf/src/config"
 	"github.com/zarf-dev/zarf/src/pkg/layout"
@@ -39,7 +40,7 @@ func (p *Packager) Publish(ctx context.Context) (err error) {
 
 		arch := config.GetArch()
 
-		dstRemote, err := zoci.NewRemote(p.cfg.PublishOpts.PackageDestination, oci.PlatformForArch(arch))
+		dstRemote, err := zoci.NewRemote(ctx, p.cfg.PublishOpts.PackageDestination, oci.PlatformForArch(arch))
 		if err != nil {
 			return err
 		}
@@ -94,7 +95,7 @@ func (p *Packager) Publish(ctx context.Context) (err error) {
 	} else {
 		platform = oci.PlatformForArch(p.cfg.Pkg.Build.Architecture)
 	}
-	remote, err := zoci.NewRemote(ref, platform)
+	remote, err := zoci.NewRemote(ctx, ref, platform)
 	if err != nil {
 		return err
 	}

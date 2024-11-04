@@ -12,6 +12,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/zarf-dev/zarf/src/pkg/logger"
+
 	"github.com/Masterminds/semver/v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -30,6 +32,7 @@ import (
 
 // Packager is the main struct for managing packages.
 type Packager struct {
+	ctx            context.Context
 	cfg            *types.PackagerConfig
 	variableConfig *variables.VariableConfig
 	state          *types.ZarfState
@@ -65,39 +68,46 @@ func WithTemp(base string) Modifier {
 	}
 }
 
+// WithContext sets the packager's context
+func WithContext(ctx context.Context) Modifier {
+	return func(p *Packager) {
+		p.ctx = ctx
+	}
+}
+
 /*
 New creates a new package instance with the provided config.
 
 Note: This function creates a tmp directory that should be cleaned up with p.ClearTempPaths().
 */
 func New(cfg *types.PackagerConfig, mods ...Modifier) (*Packager, error) {
+	var err error
 	if cfg == nil {
 		return nil, fmt.Errorf("no config provided")
 	}
 
-	var (
-		err  error
-		pkgr = &Packager{
-			cfg: cfg,
-		}
-	)
-
-	pkgr.variableConfig = template.GetZarfVariableConfig()
-
-	if config.CommonOptions.TempDirectory != "" {
-		// If the cache directory is within the temp directory, warn the user
-		if strings.HasPrefix(config.CommonOptions.CachePath, config.CommonOptions.TempDirectory) {
-			message.Warnf("The cache directory (%q) is within the temp directory (%q) and will be removed when the temp directory is cleaned up", config.CommonOptions.CachePath, config.CommonOptions.TempDirectory)
-		}
-	}
-
+	pkgr := &Packager{cfg: cfg}
 	for _, mod := range mods {
 		mod(pkgr)
 	}
 
+	l := logger.From(pkgr.ctx)
+
+	pkgr.variableConfig = template.GetZarfVariableConfig(pkgr.ctx)
+	cacheDir := config.CommonOptions.CachePath
+	tmpDir := config.CommonOptions.TempDirectory
+	if config.CommonOptions.TempDirectory != "" {
+		// If the cache directory is within the temp directory, warn the user
+		if strings.HasPrefix(cacheDir, tmpDir) {
+			// TODO(mkcp): Remove message on logger release
+			message.Warnf("The cache directory (%q) is within the temp directory (%q) and will be removed when the temp directory is cleaned up", config.CommonOptions.CachePath, config.CommonOptions.TempDirectory)
+			l.Warn("the cache directory is within the temp directory and will be removed when the temp directory is cleaned up", "cacheDir", cacheDir, "tmpDir", tmpDir)
+		}
+	}
+
 	// Fill the source if it wasn't provided - note source can be nil if the package is being created
 	if pkgr.source == nil && pkgr.cfg.CreateOpts.BaseDir == "" {
-		pkgr.source, err = sources.New(&pkgr.cfg.PkgOpts)
+		pkgr.source, err = sources.New(pkgr.ctx, &pkgr.cfg.PkgOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +119,9 @@ func New(cfg *types.PackagerConfig, mods ...Modifier) (*Packager, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to create package temp paths: %w", err)
 		}
+		// TODO(mkcp): Remove message on logger release
 		message.Debug("Using temporary directory:", dir)
+		l.Debug("using temporary directory", "tmpDir", dir)
 		pkgr.layout = layout.New(dir)
 	}
 
@@ -118,9 +130,20 @@ func New(cfg *types.PackagerConfig, mods ...Modifier) (*Packager, error) {
 
 // ClearTempPaths removes the temp directory and any files within it.
 func (p *Packager) ClearTempPaths() {
-	// Remove the temp directory, but don't throw an error if it fails
-	_ = os.RemoveAll(p.layout.Base)
-	_ = os.RemoveAll(layout.SBOMDir)
+	// Remove the temp directory
+	l := logger.From(p.ctx)
+	l.Debug("clearing temp paths",
+		"basePath", p.layout.Base,
+		"SBOMDir", layout.SBOMDir,
+	)
+	err := os.RemoveAll(p.layout.Base)
+	if err != nil {
+		l.Error(err.Error(), "basePath", p.layout.Base)
+	}
+	err2 := os.RemoveAll(layout.SBOMDir)
+	if err2 != nil {
+		l.Error(err2.Error(), "SBOMDir", layout.SBOMDir)
+	}
 }
 
 // GetVariableConfig returns the variable configuration for the packager.

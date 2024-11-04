@@ -23,6 +23,7 @@ import (
 	"github.com/zarf-dev/zarf/src/config"
 	"github.com/zarf-dev/zarf/src/config/lang"
 	"github.com/zarf-dev/zarf/src/pkg/lint"
+	"github.com/zarf-dev/zarf/src/pkg/logger"
 	"github.com/zarf-dev/zarf/src/pkg/message"
 	"github.com/zarf-dev/zarf/src/pkg/packager"
 	"github.com/zarf-dev/zarf/src/pkg/transform"
@@ -31,6 +32,8 @@ import (
 )
 
 var extractPath string
+
+var defaultRegistry = fmt.Sprintf("%s:%d", helpers.IPV4Localhost, types.ZarfInClusterContainerRegistryNodePort)
 
 var devCmd = &cobra.Command{
 	Use:     "dev",
@@ -44,7 +47,7 @@ var devDeployCmd = &cobra.Command{
 	Short: lang.CmdDevDeployShort,
 	Long:  lang.CmdDevDeployLong,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pkgConfig.CreateOpts.BaseDir = common.SetBaseDirectory(args)
+		pkgConfig.CreateOpts.BaseDir = setBaseDirectory(args)
 
 		v := common.GetViper()
 		pkgConfig.CreateOpts.SetVariables = helpers.TransformAndMergeMap(
@@ -111,13 +114,17 @@ var devTransformGitLinksCmd = &cobra.Command{
 			return fmt.Errorf("unable to read the file %s: %w", fileName, err)
 		}
 
-		pkgConfig.InitOpts.GitServer.Address = host
+		gitServer := pkgConfig.InitOpts.GitServer
+		gitServer.Address = host
 
 		// Perform git url transformation via regex
 		text := string(content)
-		processedText := transform.MutateGitURLsInText(message.Warnf, pkgConfig.InitOpts.GitServer.Address, text, pkgConfig.InitOpts.GitServer.PushUsername)
+
+		// TODO(mkcp): Currently uses message for its log fn. Migrate to ctx and slog
+		processedText := transform.MutateGitURLsInText(message.Warnf, gitServer.Address, text, gitServer.PushUsername)
 
 		// Print the differences
+		// TODO(mkcp): Uses pterm to print text diffs. Decouple from pterm after we release logger.
 		dmp := diffmatchpatch.New()
 		diffs := dmp.DiffMain(text, processedText, true)
 		diffs = dmp.DiffCleanupSemantic(diffs)
@@ -158,6 +165,7 @@ var devSha256SumCmd = &cobra.Command{
 
 		if helpers.IsURL(fileName) {
 			message.Warn(lang.CmdDevSha256sumRemoteWarning)
+			logger.From(cmd.Context()).Warn("this is a remote source. If a published checksum is available you should use that rather than calculating it directly from the remote link")
 
 			fileBase, err := helpers.ExtractBasePathFromURL(fileName)
 			if err != nil {
@@ -234,7 +242,7 @@ var devFindImagesCmd = &cobra.Command{
 	Short:   lang.CmdDevFindImagesShort,
 	Long:    lang.CmdDevFindImagesLong,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		pkgConfig.CreateOpts.BaseDir = common.SetBaseDirectory(args)
+		pkgConfig.CreateOpts.BaseDir = setBaseDirectory(args)
 
 		v := common.GetViper()
 
@@ -249,8 +257,14 @@ var devFindImagesCmd = &cobra.Command{
 		defer pkgClient.ClearTempPaths()
 
 		_, err = pkgClient.FindImages(cmd.Context())
+
 		var lintErr *lint.LintError
 		if errors.As(err, &lintErr) {
+			// HACK(mkcp): Re-initializing PTerm with a stderr writer isn't great, but it lets us render these lint
+			// tables below for backwards compatibility
+			if logger.Enabled(cmd.Context()) {
+				message.InitializePTerm(logger.DestinationDefault)
+			}
 			common.PrintFindings(lintErr)
 		}
 		if err != nil {
@@ -289,7 +303,7 @@ var devLintCmd = &cobra.Command{
 	Long:    lang.CmdDevLintLong,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		config.CommonOptions.Confirm = true
-		pkgConfig.CreateOpts.BaseDir = common.SetBaseDirectory(args)
+		pkgConfig.CreateOpts.BaseDir = setBaseDirectory(args)
 		v := common.GetViper()
 		pkgConfig.CreateOpts.SetVariables = helpers.TransformAndMergeMap(
 			v.GetStringMapString(common.VPkgCreateSet), pkgConfig.CreateOpts.SetVariables, strings.ToUpper)
@@ -297,6 +311,11 @@ var devLintCmd = &cobra.Command{
 		err := lint.Validate(cmd.Context(), pkgConfig.CreateOpts.BaseDir, pkgConfig.CreateOpts.Flavor, pkgConfig.CreateOpts.SetVariables)
 		var lintErr *lint.LintError
 		if errors.As(err, &lintErr) {
+			// HACK(mkcp): Re-initializing PTerm with a stderr writer isn't great, but it lets us render these lint
+			// tables below for backwards compatibility
+			if logger.Enabled(cmd.Context()) {
+				message.InitializePTerm(logger.DestinationDefault)
+			}
 			common.PrintFindings(lintErr)
 			// Do not return an error if the findings are all warnings.
 			if lintErr.OnlyWarnings() {
@@ -349,8 +368,7 @@ func init() {
 	// skip searching cosign artifacts in find images
 	devFindImagesCmd.Flags().BoolVar(&pkgConfig.FindImagesOpts.SkipCosign, "skip-cosign", false, lang.CmdDevFlagFindImagesSkipCosign)
 
-	defaultRegistry := fmt.Sprintf("%s:%d", helpers.IPV4Localhost, types.ZarfInClusterContainerRegistryNodePort)
-	devFindImagesCmd.Flags().StringVar(&pkgConfig.FindImagesOpts.RegistryURL, "registry-url", defaultRegistry, lang.CmdDevFlagFindImagesRegistry)
+	devFindImagesCmd.Flags().StringVar(&pkgConfig.FindImagesOpts.RegistryURL, "registry-url", defaultRegistry, lang.CmdDevFlagRegistry)
 
 	devLintCmd.Flags().StringToStringVar(&pkgConfig.CreateOpts.SetVariables, "set", v.GetStringMapString(common.VPkgCreateSet), lang.CmdPackageCreateFlagSet)
 	devLintCmd.Flags().StringVarP(&pkgConfig.CreateOpts.Flavor, "flavor", "f", v.GetString(common.VPkgCreateFlavor), lang.CmdPackageCreateFlagFlavor)
@@ -364,11 +382,16 @@ func bindDevDeployFlags(v *viper.Viper) {
 	devDeployFlags.StringToStringVar(&pkgConfig.CreateOpts.RegistryOverrides, "registry-override", v.GetStringMapString(common.VPkgCreateRegistryOverride), lang.CmdPackageCreateFlagRegistryOverride)
 	devDeployFlags.StringVarP(&pkgConfig.CreateOpts.Flavor, "flavor", "f", v.GetString(common.VPkgCreateFlavor), lang.CmdPackageCreateFlagFlavor)
 
+	devDeployFlags.StringVar(&pkgConfig.DeployOpts.RegistryURL, "registry-url", defaultRegistry, lang.CmdDevFlagRegistry)
+	err := devDeployFlags.MarkHidden("registry-url")
+	if err != nil {
+		message.Debug("Unable to mark dev-deploy flag as hidden", "error", err)
+	}
+
 	devDeployFlags.StringToStringVar(&pkgConfig.PkgOpts.SetVariables, "deploy-set", v.GetStringMapString(common.VPkgDeploySet), lang.CmdPackageDeployFlagSet)
 
 	// Always require adopt-existing-resources flag (no viper)
 	devDeployFlags.BoolVar(&pkgConfig.DeployOpts.AdoptExistingResources, "adopt-existing-resources", false, lang.CmdPackageDeployFlagAdoptExistingResources)
-	devDeployFlags.BoolVar(&pkgConfig.DeployOpts.SkipWebhooks, "skip-webhooks", v.GetBool(common.VPkgDeploySkipWebhooks), lang.CmdPackageDeployFlagSkipWebhooks)
 	devDeployFlags.DurationVar(&pkgConfig.DeployOpts.Timeout, "timeout", v.GetDuration(common.VPkgDeployTimeout), lang.CmdPackageDeployFlagTimeout)
 
 	devDeployFlags.IntVar(&pkgConfig.PkgOpts.Retries, "retries", v.GetInt(common.VPkgRetries), lang.CmdPackageFlagRetries)
